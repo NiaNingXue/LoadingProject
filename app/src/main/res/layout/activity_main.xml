@@ -6,7 +6,7 @@
 
     >
 
-    <com.insta.download.loadingproject.view.LoadingView
+    <com.nianing.loading.LoadingView
         android:id="@+id/loadingView"
         android:layout_width="50dp"
         android:layout_height="50dp"
