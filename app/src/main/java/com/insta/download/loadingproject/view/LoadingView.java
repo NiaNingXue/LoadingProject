@@ -1,5 +1,6 @@
 package com.insta.download.loadingproject.view;
 
+import android.animation.Animator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.Resources;
@@ -12,21 +13,18 @@ import android.graphics.PathMeasure;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.drawable.Drawable;
-import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.v4.view.animation.FastOutSlowInInterpolator;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
+import android.view.animation.AccelerateInterpolator;
 import android.view.animation.Animation;
 import android.view.animation.Interpolator;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.Transformation;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 
 /**
@@ -41,27 +39,9 @@ public class LoadingView extends View {
     private static final float FULL_ROTATION = 1080.0f;
     private Rect mBounds;
     private float mRightLength;
-
-    @Retention(RetentionPolicy.CLASS)
-    @IntDef({LARGE, DEFAULT})
-    public @interface ProgressDrawableSize {}
-    // Maps to ProgressBar.Large style
-    static final int LARGE = 0;
-    // Maps to ProgressBar default style
-    static final int DEFAULT = 1;
-
-    // Maps to ProgressBar default style
-    private static final int CIRCLE_DIAMETER = 40;
-    private static final float CENTER_RADIUS = 8.75f; //should add up to 10 when + stroke_width
-    private static final float STROKE_WIDTH = 2.5f;
-
-    // Maps to ProgressBar.Large style
-    private static final int CIRCLE_DIAMETER_LARGE = 56;
-    private static final float CENTER_RADIUS_LARGE = 12.5f;
-    private static final float STROKE_WIDTH_LARGE = 3f;
-
+    private static final float STROKE_WIDTH = 2.f;
     private final int[] COLORS = new int[] {
-            Color.BLACK
+            Color.WHITE
     };
 
     /**
@@ -71,6 +51,7 @@ public class LoadingView extends View {
     private static final float COLOR_START_DELAY_OFFSET = 0.75f;
     private static final float END_TRIM_START_DELAY_OFFSET = 0.5f;
     private static final float START_TRIM_DURATION_OFFSET = 0.5f;
+    private static final float START_RIGHT_DURATION_OFFSET = 0.3f;
 
     /** The duration of a single progress spin in milliseconds. */
     private static final int ANIMATION_DURATION = 1332;
@@ -86,32 +67,24 @@ public class LoadingView extends View {
     /** Canvas rotation in degrees. */
     private float mRotation;
 
-    /** Layout info for the arrowhead in dp */
-    private static final int ARROW_WIDTH = 10;
-    private static final int ARROW_HEIGHT = 5;
-    private static final float ARROW_OFFSET_ANGLE = 5;
-
     /** Layout info for the arrowhead for the large spinner in dp */
-    private static final int ARROW_WIDTH_LARGE = 12;
-    private static final int ARROW_HEIGHT_LARGE = 6;
     private static final float MAX_PROGRESS_ARC = .8f;
 
     private Resources mResources;
     private View mParent;
     private Animation mAnimation;
     private float mRotationCount;
-    private double mWidth;
-    private double mHeight;
     boolean mFinishing;
     boolean mRestart;
-    private final Paint mRectPaint = new Paint();
     //绘制对号相关
+    private boolean mDrawRight;
     private PathMeasure mPathMeasure;
+    private final Paint mRightPaint = new Paint();
     private Path mRightPath;
     private Path mRightDst;
     private float mRightProgress;
     private ValueAnimator mRightAnimator;
-
+    private float screenDensity;
 
 
     public LoadingView(Context context) {
@@ -122,42 +95,27 @@ public class LoadingView extends View {
         super(context, attrs);
         mParent = this;
         mResources = context.getResources();
-
+        final DisplayMetrics metrics = mResources.getDisplayMetrics();
+        screenDensity = metrics.density;
         mRing = new Ring();
         mRing.setColors(COLORS);
 
-        mRectPaint.setColor(Color.RED);
-        mRectPaint.setAntiAlias(true);
-        mRectPaint.setStyle(Paint.Style.STROKE);
-        mRectPaint.setStrokeWidth(6);
-        updateSizes(DEFAULT);
+        mRightPaint.setColor(Color.WHITE);
+        mRightPaint.setAntiAlias(true);
+        mRightPaint.setStyle(Paint.Style.STROKE);
+        mRightPaint.setStrokeWidth(STROKE_WIDTH*screenDensity);
         setupAnimators();
     }
 
-    public void updateSizes(@ProgressDrawableSize int size) {
-        if (size == LARGE) {
-            setSizeParameters(CIRCLE_DIAMETER_LARGE, CIRCLE_DIAMETER_LARGE, CENTER_RADIUS_LARGE,
-                    STROKE_WIDTH_LARGE, ARROW_WIDTH_LARGE, ARROW_HEIGHT_LARGE);
-        } else {
-            setSizeParameters(CIRCLE_DIAMETER, CIRCLE_DIAMETER, CENTER_RADIUS, STROKE_WIDTH,
-                    ARROW_WIDTH, ARROW_HEIGHT);
-        }
-    }
 
-
-    private void setSizeParameters(double progressCircleWidth, double progressCircleHeight,
-                                   double centerRadius, double strokeWidth, float arrowWidth, float arrowHeight) {
+    private void setSizeParameters(double progressCircleWidth, double progressCircleHeight,double centerRadius, double strokeWidth) {
         final Ring ring = mRing;
-        final DisplayMetrics metrics = mResources.getDisplayMetrics();
-        final float screenDensity = metrics.density;
-
-        mWidth = progressCircleWidth * screenDensity;
-        mHeight = progressCircleHeight * screenDensity;
+        float width = (float) (progressCircleWidth * screenDensity);
+        float height = (float) (progressCircleHeight * screenDensity);
         ring.setStrokeWidth((float) strokeWidth * screenDensity);
         ring.setCenterRadius(centerRadius * screenDensity);
         ring.setColorIndex(0);
-        ring.setArrowDimensions(arrowWidth * screenDensity, arrowHeight * screenDensity);
-        ring.setInsets((int) mWidth, (int) mHeight);
+        ring.setInsets((int) width, (int) height);
     }
 
 
@@ -165,22 +123,11 @@ public class LoadingView extends View {
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);
         mBounds = new Rect(0,0,getMeasuredWidth(),getMeasuredHeight());
-
+        float diameter = Math.min(mBounds.width(),mBounds.height());
+        setSizeParameters(diameter,diameter,diameter/2 - STROKE_WIDTH ,STROKE_WIDTH);
+        //绘制对号path
         mRightPath = new Path();
         mRightDst = new Path();
-//
-        float diameter = Math.min(getMeasuredWidth(),getMeasuredHeight());
-//        mLeftPoint.x = (int) (paddingLeft + (diameter * 0.2428));
-//        mLeftPoint.y = (int) (paddingTop + diameter * 0.4712);
-//
-//        mMiddlePoint.x = (int) (paddingLeft + (diameter * 0.4571));
-//        mMiddlePoint.y = (int) (paddingTop + diameter * 0.6642);
-//
-//        mStopPoint.x = (int) (paddingLeft + diameter * 0.4581);
-//        mStopPoint.y = (int) (paddingTop + diameter * 0.6652);
-//
-//        mRightPoint.x = (int) (paddingLeft + (diameter * 0.7642));
-//        mRightPoint.y = (int) (paddingTop + diameter * 0.3285);
         mRightPath.moveTo(diameter * 0.2428f,diameter * 0.4712f);
         mRightPath.lineTo(diameter * 0.4571f,diameter * 0.6642f);
         mRightPath.lineTo(diameter * 0.7642f,diameter * 0.3285f);
@@ -196,10 +143,12 @@ public class LoadingView extends View {
         mRing.draw(canvas, mBounds);
         canvas.restoreToCount(saveCount);
         //draw right
-        mRightDst.reset();
-        mRightDst.lineTo(0,0);
-        mPathMeasure.getSegment(0,mRightLength*mRightProgress,mRightDst,true);
-        canvas.drawPath(mRightDst,mRectPaint);
+        if (mDrawRight){
+            mRightDst.reset();
+            mRightDst.lineTo(0,0);
+            mPathMeasure.getSegment(0,mRightLength*mRightProgress,mRightDst,true);
+            canvas.drawPath(mRightDst, mRightPaint);
+        }
     }
 
     public void setAlpha(int alpha) {
@@ -241,6 +190,10 @@ public class LoadingView extends View {
     public void start() {
         mAnimation.reset();
         mRing.storeOriginals();
+        if(mRightAnimator!=null&&mRightAnimator.isRunning()){
+            mRightAnimator.end();
+            mRing.resetOriginals();
+        }
         // Already showing some part of the ring
         if (mRing.getEndTrim() != mRing.getStartTrim()) {
             mRestart = true;
@@ -257,7 +210,6 @@ public class LoadingView extends View {
     public void stop() {
         mParent.clearAnimation();
         setRotation(0);
-        mRing.setShowArrow(false);
         mRing.setColorIndex(0);
         mRing.resetOriginals();
     }
@@ -412,6 +364,7 @@ public class LoadingView extends View {
             @Override
             public void onAnimationStart(Animation animation) {
                 mRotationCount = 0;
+                mDrawRight = false;
             }
 
             @Override
@@ -421,8 +374,6 @@ public class LoadingView extends View {
                     // finished closing the last ring from the swipe gesture; go
                     // into progress mode
                     mFinishing = false;
-//                    animation.setDuration(ANIMATION_DURATION);
-//                    ring.setShowArrow(true);
                     mRightAnimator.start();
                 }
             }
@@ -438,13 +389,11 @@ public class LoadingView extends View {
                     // into progress mode
                     mFinishing = false;
                     animation.setDuration(ANIMATION_DURATION);
-                    ring.setShowArrow(false);
                 }else if(mRestart){
                     // finished closing the last ring from the swipe gesture; go
                     // into progress mode
                     mRestart = false;
                     animation.setDuration(ANIMATION_DURATION);
-                    ring.setShowArrow(false);
                 } else {
                     mRotationCount = (mRotationCount + 1) % (NUM_POINTS);
                 }
@@ -457,13 +406,44 @@ public class LoadingView extends View {
         valueAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
-                mRightProgress = (Float)animation.getAnimatedValue();
-                Log.i(TAG, "mRightProgress: "+mRightProgress);
+/*                float fraction = animation.getAnimatedFraction();
+                if (fraction <= START_RIGHT_DURATION_OFFSET) {
+                    final float scaledTime = (fraction) / (1.0f - START_RIGHT_DURATION_OFFSET);
+                    MATERIAL_INTERPOLATOR.getInterpolation(scaledTime);
+                }
+
+                if (fraction > START_RIGHT_DURATION_OFFSET) {
+                    float scaledTime = (fraction - START_RIGHT_DURATION_OFFSET)
+                            / (1.0f - START_RIGHT_DURATION_OFFSET);
+                    mRightProgress = MATERIAL_INTERPOLATOR.getInterpolation(scaledTime);
+                }*/
+                mRightProgress = animation.getAnimatedFraction();
                 invalidate();
             }
         });
-        valueAnimator.setDuration(800);
-        valueAnimator.setInterpolator(MATERIAL_INTERPOLATOR);
+        valueAnimator.addListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+                mDrawRight = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animation) {
+
+            }
+        });
+        valueAnimator.setDuration(500);
+        valueAnimator.setInterpolator(new AccelerateInterpolator(1.8f));
         mRightAnimator = valueAnimator;
     }
 
@@ -471,7 +451,6 @@ public class LoadingView extends View {
     private static class Ring {
         private final RectF mTempBounds = new RectF();
         private final Paint mPaint = new Paint();
-        private final Paint mArrowPaint = new Paint();
         private float mStartTrim = 0.0f;
         private float mEndTrim = 0.0f;
         private float mRotation = 0.0f;
@@ -486,14 +465,8 @@ public class LoadingView extends View {
         private float mStartingStartTrim;
         private float mStartingEndTrim;
         private float mStartingRotation;
-        private boolean mShowArrow;
-        private Path mArrow;
-        private float mArrowScale;
         private double mRingCenterRadius;
-        private int mArrowWidth;
-        private int mArrowHeight;
         private int mAlpha;
-        private final Paint mCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private int mBackgroundColor;
         private int mCurrentColor;
 
@@ -502,25 +475,12 @@ public class LoadingView extends View {
             mPaint.setAntiAlias(true);
             mPaint.setStyle(Paint.Style.STROKE);
             mPaint.setColor(Color.RED);
-
-            mArrowPaint.setStyle(Paint.Style.FILL);
-            mArrowPaint.setAntiAlias(true);
         }
 
         public void setBackgroundColor(int color) {
             mBackgroundColor = color;
         }
 
-        /**
-         * Set the dimensions of the arrowhead.
-         *
-         * @param width Width of the hypotenuse of the arrow head
-         * @param height Height of the arrow point
-         */
-        public void setArrowDimensions(float width, float height) {
-            mArrowWidth = (int) width;
-            mArrowHeight = (int) height;
-        }
 
         /**
          * Draw the progress spinner
@@ -532,53 +492,10 @@ public class LoadingView extends View {
             final float startAngle = (mStartTrim + mRotation) * 360;
             final float endAngle = (mEndTrim + mRotation) * 360;
             float sweepAngle = endAngle - startAngle;
-//            Log.i(TAG, "startAngle: "+startAngle+ " sweepAngle:"+sweepAngle+" mRotation:"+mRotation);
-
             mPaint.setColor(mCurrentColor);
             c.drawArc(arcBounds, startAngle, sweepAngle, false, mPaint);
-
-//            drawTriangle(c, startAngle, sweepAngle, bounds);
-//
-//            if (mAlpha < 255) {
-//                mCirclePaint.setColor(mBackgroundColor);
-//                mCirclePaint.setAlpha(255 - mAlpha);
-//                c.drawCircle(bounds.exactCenterX(), bounds.exactCenterY(), bounds.width() / 2,
-//                        mCirclePaint);
-//            }
         }
 
-        private void drawTriangle(Canvas c, float startAngle, float sweepAngle, Rect bounds) {
-            if (mShowArrow) {
-                if (mArrow == null) {
-                    mArrow = new android.graphics.Path();
-                    mArrow.setFillType(android.graphics.Path.FillType.EVEN_ODD);
-                } else {
-                    mArrow.reset();
-                }
-
-                // Adjust the position of the triangle so that it is inset as
-                // much as the arc, but also centered on the arc.
-                float inset = (int) mStrokeInset / 2 * mArrowScale;
-                float x = (float) (mRingCenterRadius * Math.cos(0) + bounds.exactCenterX());
-                float y = (float) (mRingCenterRadius * Math.sin(0) + bounds.exactCenterY());
-
-                // Update the path each time. This works around an issue in SKIA
-                // where concatenating a rotation matrix to a scale matrix
-                // ignored a starting negative rotation. This appears to have
-                // been fixed as of API 21.
-                mArrow.moveTo(0, 0);
-                mArrow.lineTo(mArrowWidth * mArrowScale, 0);
-                mArrow.lineTo((mArrowWidth * mArrowScale / 2), (mArrowHeight
-                        * mArrowScale));
-                mArrow.offset(x - inset, y);
-                mArrow.close();
-                // draw a triangle
-                mArrowPaint.setColor(mCurrentColor);
-                c.rotate(startAngle + sweepAngle - ARROW_OFFSET_ANGLE, bounds.exactCenterX(),
-                        bounds.exactCenterY());
-                c.drawPath(mArrow, mArrowPaint);
-            }
-        }
 
         /**
          * Set the colors the progress spinner alternates between.
@@ -714,7 +631,6 @@ public class LoadingView extends View {
             mStrokeInset = insets;
         }
 
-        @SuppressWarnings("unused")
         public float getInsets() {
             return mStrokeInset;
         }
@@ -729,24 +645,6 @@ public class LoadingView extends View {
 
         public double getCenterRadius() {
             return mRingCenterRadius;
-        }
-
-        /**
-         * @param show Set to true to show the arrow head on the progress spinner.
-         */
-        public void setShowArrow(boolean show) {
-            if (mShowArrow != show) {
-                mShowArrow = show;
-            }
-        }
-
-        /**
-         * @param scale Set the scale of the arrowhead for the spinner.
-         */
-        public void setArrowScale(float scale) {
-            if (scale != mArrowScale) {
-                mArrowScale = scale;
-            }
         }
 
         /**

@@ -24,12 +24,25 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 mLoadingView.finish();
             }
+        },2000);
+        mLoadingView.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                mLoadingView.start();
+            }
         },3000);
-/*        RotateAnimation rotateAnimation = new RotateAnimation(0,1080,RotateAnimation.RELATIVE_TO_SELF,0.5f,RotateAnimation.RELATIVE_TO_SELF,0.5f);
-        rotateAnimation.setDuration(1000);
-        rotateAnimation.setRepeatMode(Animation.RESTART);
-        rotateAnimation.setRepeatCount(Animation.INFINITE);
-        rotateAnimation.setInterpolator(new LinearInterpolator());
-        mLoadingView.startAnimation(rotateAnimation);*/
+        mLoadingView.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                mLoadingView.finish();
+            }
+        },3500);
+        mLoadingView.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                mLoadingView.finish();
+            }
+        },4000);
+
     }
 }
