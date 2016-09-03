@@ -194,6 +194,7 @@ public class LoadingView extends View {
             mRightAnimator.end();
             mRing.resetOriginals();
         }
+        mRing.resetOriginals();
         // Already showing some part of the ring
         if (mRing.getEndTrim() != mRing.getStartTrim()) {
             mRestart = true;
